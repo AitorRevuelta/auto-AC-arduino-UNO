@@ -1,0 +1,58 @@
+#include <Arduino.h>
+#define IR_SEND_PIN 9 
+#include <IRremote.hpp>
+
+// Función para generar el pulso de 38kHz manualmente
+void enviarPulso(int microsegundos) {
+    IrSender.mark(microsegundos);
+}
+
+// Función para generar el silencio manualmente
+void enviarEspacio(int microsegundos) {
+    IrSender.space(microsegundos);
+}
+
+void enviarByteMidea(byte b) {
+    for (int i = 0; i < 8; i++) {
+        enviarPulso(560); // Marca constante
+        if (bitRead(b, i)) {
+            enviarEspacio(1600); // Espacio largo para 1
+        } else {
+            enviarEspacio(560);  // Espacio corto para 0
+        }
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+    IrSender.begin(IR_SEND_PIN);
+    Serial.println("--- MODO MANUAL FORZADO (PIN 9) ---");
+}
+
+void loop() {
+    Serial.println("Disparando ráfaga...");
+
+    // 1. HEADER (4.5ms ON, 4.5ms OFF)
+    enviarPulso(4500);
+    enviarEspacio(4400);
+
+    // 2. DATOS (48 BITS / 6 BYTES)
+    enviarByteMidea(0xB2); 
+    enviarByteMidea(0x4D); 
+    enviarByteMidea(0x1F); 
+    enviarByteMidea(0xE0); 
+    enviarByteMidea(0x20); 
+    enviarByteMidea(0xDF); 
+
+    // 3. STOP BIT
+    enviarPulso(560);
+    enviarEspacio(0);
+
+    Serial.println("Envío OK. Esperando 5 segundos...");
+    
+    // TRUCO FINAL: Delay manual por si el delay() estándar falla
+    unsigned long start = millis();
+    while (millis() - start < 5000) {
+        // Espera activa
+    }
+}
