@@ -1,58 +1,60 @@
 #include <Arduino.h>
-#define IR_SEND_PIN 9 
-#include <IRremote.hpp>
 
-// Función para generar el pulso de 38kHz manualmente
-void enviarPulso(int microsegundos) {
-    IrSender.mark(microsegundos);
+const int IR_PIN = 9; // Usamos vuestro Pin 9
+
+// Función para generar la portadora de 38kHz manualmente en el Pin 9
+void oscilar(int microsegundos) {
+  long pausa = microsegundos / 26; // 26us es el periodo de 38kHz
+  for (int i = 0; i < pausa; i++) {
+    digitalWrite(IR_PIN, HIGH);
+    delayMicroseconds(9); // 9us ON
+    digitalWrite(IR_PIN, LOW);
+    delayMicroseconds(12); // 12us OFF (ajustado para latencia)
+  }
 }
 
-// Función para generar el silencio manualmente
 void enviarEspacio(int microsegundos) {
-    IrSender.space(microsegundos);
+  digitalWrite(IR_PIN, LOW);
+  delayMicroseconds(microsegundos);
 }
 
-void enviarByteMidea(byte b) {
-    for (int i = 0; i < 8; i++) {
-        enviarPulso(560); // Marca constante
-        if (bitRead(b, i)) {
-            enviarEspacio(1600); // Espacio largo para 1
-        } else {
-            enviarEspacio(560);  // Espacio corto para 0
-        }
+void enviarByteHyundai(byte b) {
+  for (int i = 0; i < 8; i++) {
+    oscilar(560); // Marca
+    if (bitRead(b, i)) {
+      enviarEspacio(1600); // Uno
+    } else {
+      enviarEspacio(560);  // Cero
     }
+  }
 }
 
 void setup() {
-    Serial.begin(115200);
-    IrSender.begin(IR_SEND_PIN);
-    Serial.println("--- MODO MANUAL FORZADO (PIN 9) ---");
+  pinMode(IR_PIN, OUTPUT);
+  digitalWrite(IR_PIN, LOW);
+  Serial.begin(115200);
+  Serial.println("MODO MANUAL BIT-BANGING EN PIN 9");
 }
 
 void loop() {
-    Serial.println("Disparando ráfaga...");
+  Serial.println("Disparando ráfaga manual...");
 
-    // 1. HEADER (4.5ms ON, 4.5ms OFF)
-    enviarPulso(4500);
-    enviarEspacio(4400);
+  // 1. HEADER
+  oscilar(4500);
+  enviarEspacio(4400);
 
-    // 2. DATOS (48 BITS / 6 BYTES)
-    enviarByteMidea(0xB2); 
-    enviarByteMidea(0x4D); 
-    enviarByteMidea(0x1F); 
-    enviarByteMidea(0xE0); 
-    enviarByteMidea(0x20); 
-    enviarByteMidea(0xDF); 
+  // 2. DATOS (Tus 6 bytes)
+  enviarByteHyundai(0xB2);
+  enviarByteHyundai(0x4D);
+  enviarByteHyundai(0x1F);
+  enviarByteHyundai(0xE0);
+  enviarByteHyundai(0x20);
+  enviarByteHyundai(0xDF);
 
-    // 3. STOP BIT
-    enviarPulso(560);
-    enviarEspacio(0);
+  // 3. STOP
+  oscilar(560);
+  enviarEspacio(0);
 
-    Serial.println("Envío OK. Esperando 5 segundos...");
-    
-    // TRUCO FINAL: Delay manual por si el delay() estándar falla
-    unsigned long start = millis();
-    while (millis() - start < 5000) {
-        // Espera activa
-    }
+  Serial.println("Envío completado con éxito.");
+  delay(5000); // Espera 5 segundos
 }
