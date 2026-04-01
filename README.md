@@ -1,51 +1,118 @@
-Arduino IR Remote Control (Midea Protocol)
-This project implements a custom infrared (IR) transmitter using an Arduino to control devices that use the Midea protocol (commonly found in AC units from brands like Midea, Comfee, Carrier, and others).
-Unlike standard implementations, this code uses a "Forced Manual Mode" to ensure precise timing for pulses (mark) and spaces (space), bypassing some of the library's high-level abstractions for better compatibility.
+# Auto AC Arduino UNO
 
-Features
+Automatic air conditioning controller using an Arduino UNO. The system reads room temperature via a DHT11 sensor and sends IR commands to a Midea-compatible AC unit to keep the room at a target temperature.
 
-    Manual Timing Control: Explicitly defines the duration of the Header and individual bits.
-    48-bit Protocol: Sends 6-byte bursts following the standard Midea structure.
-    Configurable Output: Optimized for digital pin 9 (PWM).
-    Serial Debugging: Real-time feedback via the Serial Monitor at 115200 baud.
+The project is split into two independent sketches:
 
-Hardware Requirements
+| Sketch | Folder | Purpose |
+|--------|--------|---------|
+| Capture | `capture/` | Receive and decode IR signals from the original remote |
+| Sender  | `sender/`  | Monitor temperature and send ON/OFF commands automatically |
 
-    Arduino Board (Uno, Nano, or compatible).
-    Infrared LED (940nm).
-    Resistor (appropriate for your LED, usually 100Ω to 220Ω).
-    Transistor (Optional but Recommended): A 2N2222 or similar to increase the IR signal range.
+---
 
-Wiring
+## Hardware Requirements
 
-IR LED Anode (+)	Pin 9 (via resistor)
-IR LED Cathode (-)	GND
+| Component | Notes |
+|-----------|-------|
+| Arduino UNO (or Nano) | Main controller |
+| IR receiver module (VS1838B or similar, 940 nm) | For capture sketch |
+| IR LED (940 nm) | For sender sketch |
+| Resistor 100–220 Ω | In series with IR LED |
+| 2N2222 transistor | Optional — increases IR range |
+| DHT11 temperature sensor | For sender sketch |
 
-Dependencies
+---
 
-The code requires the IRremote library. You can install it via the Arduino IDE Library Manager:
-    
-    Name: IRremote
-    Recommended Version: 4.x or higher.
+## Wiring
 
-Message Structure (Payload)
+### Capture sketch (`capture/`)
 
-The code sends a 6-byte burst. The current example sends:
-0xB2, 0x4D, 0x1F, 0xE0, 0x20, 0xDF.
+| IR Receiver Pin | Arduino |
+|-----------------|---------|
+| OUT (signal)    | Pin 2   |
+| VCC             | 5V      |
+| GND             | GND     |
 
-To change the command (e.g., adjust temperature, mode, or power), you must modify the values inside the loop() function under the DATA section.
+### Sender sketch (`sender/`)
 
-Protocol Specifications:
+| Component        | Arduino |
+|-----------------|---------|
+| IR LED anode (via 100–220 Ω resistor) | Pin 9 |
+| IR LED cathode  | GND     |
+| DHT11 DATA      | Pin 4   |
+| DHT11 VCC       | 5V      |
+| DHT11 GND       | GND     |
 
-    Header: 4.5ms pulse followed by a 4.4ms space.
-    Bit Logic: * Bit 1: 560µs pulse + 1600µs space.
-        Bit 0: 560µs pulse + 560µs space.
-    Stop Bit: A final 560µs pulse.
+> **Tip:** For longer IR range, wire the IR LED through a 2N2222 transistor with the base driven from pin 9 via a 1 kΩ resistor.
 
-Setup and Installation
+---
 
-    Copy the code into your Arduino IDE.
-    Install the IRremote library.
-    Connect your Arduino and select the correct Port.
-    Click Upload.
-    Open the Serial Monitor (set to 115200 baud) to confirm that the bursts are firing every 5 seconds.
+## Step 1 — Capture your remote's signals
+
+Before deploying the sender you must capture the exact ON and OFF IR codes from your real remote:
+
+1. Wire the IR receiver to pin 2 (see wiring table above).
+2. Open `capture/capture.ino` in the Arduino IDE and upload it.
+3. Open **Serial Monitor** at **115200 baud**.
+4. Point the AC remote at the sensor and press the **ON** button.  
+   The Serial Monitor will print a `uint16_t rawData[]` array — copy it.
+5. Press the **OFF** button and copy that array too.
+6. Paste the two arrays into `sender/sender.ino` as `AC_ON_RAW[]` and `AC_OFF_RAW[]`, and update the corresponding `AC_ON_RAW_LEN` / `AC_OFF_RAW_LEN` values.
+
+---
+
+## Step 2 — Configure the sender
+
+Open `sender/sender.ino` and adjust the defines at the top:
+
+```cpp
+#define TARGET_TEMP   24.0f   // Desired room temperature (°C)
+#define HYSTERESIS     1.0f   // Dead band (°C) — avoids rapid switching
+#define CHECK_INTERVAL_MS  10000UL  // How often to read the sensor (ms)
+```
+
+| Condition | Action |
+|-----------|--------|
+| temp > TARGET_TEMP + HYSTERESIS | Send AC ON  |
+| temp < TARGET_TEMP − HYSTERESIS | Send AC OFF |
+| otherwise | No action |
+
+State is tracked, so the same command is never sent twice in a row.
+
+---
+
+## Step 3 — Upload the sender
+
+1. Wire the IR LED and DHT11 (see wiring table above).
+2. Install the required libraries via **Arduino IDE → Library Manager**:
+   - `IRremote` ≥ 4.x
+   - `DHT sensor library` (Adafruit)
+   - `Adafruit Unified Sensor` (required by DHT library)
+3. Upload `sender/sender.ino`.
+4. Open **Serial Monitor** at **115200 baud** to monitor temperature readings and commands sent.
+
+---
+
+## Protocol Reference (Midea IR)
+
+| Field      | Timing |
+|------------|--------|
+| Header mark  | 4500 µs |
+| Header space | 4400 µs |
+| Bit mark     | 560 µs  |
+| Bit 1 space  | 1600 µs |
+| Bit 0 space  | 560 µs  |
+| Stop bit     | 560 µs mark |
+| Carrier      | 38 kHz  |
+| Payload      | 48 bits (6 bytes), each byte followed by its bitwise inverse |
+
+Bits are transmitted LSB-first.
+
+---
+
+## Dependencies
+
+- [IRremote](https://github.com/Arduino-IRremote/Arduino-IRremote) ≥ 4.x
+- [DHT sensor library](https://github.com/adafruit/DHT-sensor-library) (Adafruit)
+- [Adafruit Unified Sensor](https://github.com/adafruit/Adafruit_Unified_Sensor)
