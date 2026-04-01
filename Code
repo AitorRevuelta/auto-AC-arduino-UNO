@@ -1,31 +1,14 @@
-#include <Arduino.h>
+// PIN 9 - Control Manual sin librerías
+const int IR_PIN = 9;
 
-const int IR_PIN = 9; // Usamos vuestro Pin 9
-
-// Función para generar la portadora de 38kHz manualmente en el Pin 9
+// Genera la portadora de 38kHz a mano para que no se bloquee el Timer
 void oscilar(int microsegundos) {
-  long pausa = microsegundos / 26; // 26us es el periodo de 38kHz
-  for (int i = 0; i < pausa; i++) {
+  long ciclos = microsegundos / 26; 
+  for (long i = 0; i < ciclos; i++) {
     digitalWrite(IR_PIN, HIGH);
-    delayMicroseconds(9); // 9us ON
+    delayMicroseconds(9);  // Pulso ON
     digitalWrite(IR_PIN, LOW);
-    delayMicroseconds(12); // 12us OFF (ajustado para latencia)
-  }
-}
-
-void enviarEspacio(int microsegundos) {
-  digitalWrite(IR_PIN, LOW);
-  delayMicroseconds(microsegundos);
-}
-
-void enviarByteHyundai(byte b) {
-  for (int i = 0; i < 8; i++) {
-    oscilar(560); // Marca
-    if (bitRead(b, i)) {
-      enviarEspacio(1600); // Uno
-    } else {
-      enviarEspacio(560);  // Cero
-    }
+    delayMicroseconds(12); // Pulso OFF (ajustado para 38kHz)
   }
 }
 
@@ -33,28 +16,24 @@ void setup() {
   pinMode(IR_PIN, OUTPUT);
   digitalWrite(IR_PIN, LOW);
   Serial.begin(115200);
-  Serial.println("MODO MANUAL BIT-BANGING EN PIN 9");
+  Serial.println("INICIANDO PARPADEO CONTINUO EN PIN 9...");
 }
 
 void loop() {
-  Serial.println("Disparando ráfaga manual...");
-
-  // 1. HEADER
-  oscilar(4500);
-  enviarEspacio(4400);
-
-  // 2. DATOS (Tus 6 bytes)
-  enviarByteHyundai(0xB2);
-  enviarByteHyundai(0x4D);
-  enviarByteHyundai(0x1F);
-  enviarByteHyundai(0xE0);
-  enviarByteHyundai(0x20);
-  enviarByteHyundai(0xDF);
-
-  // 3. STOP
-  oscilar(560);
-  enviarEspacio(0);
-
-  Serial.println("Envío completado con éxito.");
-  delay(5000); // Espera 5 segundos
+  Serial.println("Enviando ráfaga...");
+  
+  // Simulamos una ráfaga típica de AC para ver el parpadeo
+  oscilar(4500);         // Header Mark
+  delayMicroseconds(4400); // Header Space
+  
+  // Enviamos 32 bits de prueba
+  for(int i=0; i<32; i++){
+    oscilar(560);
+    delayMicroseconds(560);
+  }
+  
+  digitalWrite(IR_PIN, LOW); // SEGURIDAD: Forzamos apagado
+  
+  Serial.println("Pulso enviado. Esperando 2 segundos...");
+  delay(2000); 
 }
