@@ -21,8 +21,9 @@
 //    - State is tracked so the same command is never sent twice in a row.
 //
 //  HOW TO GET YOUR RAW CODES:
-//    Use capture.ino to capture your remote's ON and OFF signals,
-//    then paste the printed rawData arrays below.
+//    Use capture.ino (with RAW_BUFFER_LENGTH 750) to capture your remote's
+//    ON and OFF signals. Print the 6 bytes for each and XOR them byte-by-byte
+//    to find the power bit. Paste the values into codeON and codeOFF below.
 // ============================================================
 
 #include <Arduino.h>
@@ -46,66 +47,64 @@ DHT dht(DHT_PIN, DHT_TYPE);
 #define CHECK_INTERVAL_MS  10000UL   // every 10 seconds
 
 // ============================================================
-//  RAW IR TIMINGS — paste values from capture.ino here
+//  MIDEA IR PAYLOADS — paste 6-byte captures from capture.ino
 //
-//  The arrays below contain the timings (in microseconds) of
-//  alternating marks and spaces captured from the real remote.
-//  First value = first mark after the header gap.
+//  Midea protocol: LSB first, bytes come in complement pairs
+//  (byte N and byte N+1 are bitwise inverses of each other).
 //
-//  IMPORTANT: rawLen must equal the number of elements in the array.
+//  To find the power bit: XOR codeON and codeOFF byte-by-byte.
+//  The byte(s) that differ contain the power bit.
 // ============================================================
 
-// --- AC ON command (captured from remote) ---
-// TODO: replace with values printed by capture.ino when you press ON
-uint16_t AC_ON_RAW[] = {
-    4500, 4400,                                  // Header: 4.5ms mark, 4.4ms space
-    560, 1600, 560, 560,  560, 560,  560, 1600,  // 0xB2 LSB-first: 0,1,0,0,1,1,0,1  wait — Midea sends LSB first
-    560, 560,  560, 1600, 560, 1600, 560, 560,   // 0x4D
-    560, 560,  560, 560,  560, 560,  560, 560,   // 0x1F low nibble placeholder
-    560, 1600, 560, 1600, 560, 1600, 560, 1600,  // 0x1F high nibble placeholder
-    560, 1600, 560, 1600, 560, 1600, 560, 1600,  // 0xE0
-    560, 560,  560, 560,  560, 560,  560, 560,   // 0xE0
-    560, 560,  560, 560,  560, 560,  560, 1600,  // 0x20
-    560, 1600, 560, 1600, 560, 1600, 560, 560,   // 0xDF
-    560, 1600, 560, 1600, 560, 1600, 560, 1600,  // 0xDF
-    560, 560,  560, 560,  560, 560,  560, 560,   // 0xDF
-    560                                           // Stop bit
-};
-uint16_t AC_ON_RAW_LEN = sizeof(AC_ON_RAW) / sizeof(AC_ON_RAW[0]);
+// ON packet  (power bit = 1)
+byte codeON[6]  = { 0x4D, 0xB2, 0xFD, 0x02, 0x00, 0xFF }; // TODO: fill after full capture
 
-// --- AC OFF command (captured from remote) ---
-// TODO: replace with values printed by capture.ino when you press OFF
-uint16_t AC_OFF_RAW[] = {
-    4500, 4400,
-    560, 1600, 560, 560,  560, 560,  560, 1600,  // 0xB2
-    560, 560,  560, 1600, 560, 1600, 560, 560,   // 0x4D
-    560, 560,  560, 560,  560, 560,  560, 560,   // byte 2 — OFF payload (fill from capture)
-    560, 1600, 560, 1600, 560, 1600, 560, 1600,
-    560, 1600, 560, 1600, 560, 1600, 560, 1600,  // byte 3 (inverse of byte 2)
-    560, 560,  560, 560,  560, 560,  560, 560,
-    560, 560,  560, 560,  560, 560,  560, 560,   // byte 4 — OFF payload (fill from capture)
-    560, 1600, 560, 1600, 560, 1600, 560, 1600,
-    560, 1600, 560, 1600, 560, 1600, 560, 1600,  // byte 5 (inverse of byte 4)
-    560, 560,  560, 560,  560, 560,  560, 560,
-    560, 560,  560, 560,  560, 560,  560, 560,
-    560
-};
-uint16_t AC_OFF_RAW_LEN = sizeof(AC_OFF_RAW) / sizeof(AC_OFF_RAW[0]);
+// OFF packet (power bit = 0)
+byte codeOFF[6] = { 0x4D, 0xB2, 0xFD, 0x02, 0x00, 0xFF }; // TODO: fill after full capture
+
+// ============================================================
+//  IR sending — Midea protocol
+// ============================================================
+
+void sendMideaByte(byte b) {
+    for (int i = 0; i < 8; i++) {        // LSB first
+        IrSender.mark(500);
+        IrSender.space(bitRead(b, i) ? 1600 : 550);
+    }
+}
+
+void sendMideaPacket(byte* code) {
+    // Header
+    IrSender.mark(4350);
+    IrSender.space(4400);
+
+    // 6 data bytes
+    for (int i = 0; i < 6; i++) {
+        sendMideaByte(code[i]);
+    }
+
+    // Stop bit
+    IrSender.mark(500);
+    IrSender.space(5000);
+}
+
+void sendAC(byte* code) {
+    // Midea sends the frame twice with ~9ms gap
+    sendMideaPacket(code);
+    delay(9);
+    sendMideaPacket(code);
+}
 
 // ============================================================
 //  Internal state
 // ============================================================
-bool acIsOn = false;           // tracks current AC state
+bool acIsOn = false;
 unsigned long lastCheck = 0;
-
-// ---- Send an IR burst from a raw timing array ----
-void sendRaw(uint16_t *timings, uint16_t len) {
-    IrSender.sendRaw(timings, len, 38); // 38 kHz carrier
-}
 
 void setup() {
     Serial.begin(115200);
     IrSender.begin(IR_SEND_PIN);
+    IrSender.enableIROut(38);   // 38 kHz carrier — set once
     dht.begin();
 
     Serial.println(F("Auto AC controller starting..."));
@@ -134,12 +133,12 @@ void loop() {
 
     if (!acIsOn && temp > TARGET_TEMP + HYSTERESIS) {
         Serial.println(F("-> Too hot. Sending AC ON..."));
-        sendRaw(AC_ON_RAW, AC_ON_RAW_LEN);
+        sendAC(codeON);
         acIsOn = true;
 
     } else if (acIsOn && temp < TARGET_TEMP - HYSTERESIS) {
         Serial.println(F("-> Cool enough. Sending AC OFF..."));
-        sendRaw(AC_OFF_RAW, AC_OFF_RAW_LEN);
+        sendAC(codeOFF);
         acIsOn = false;
 
     } else {
