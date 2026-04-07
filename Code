@@ -1,39 +1,50 @@
-// PIN 9 - Control Manual sin librerías
-const int IR_PIN = 9;
+#include <Arduino.h>
 
-// Genera la portadora de 38kHz a mano para que no se bloquee el Timer
-void oscilar(int microsegundos) {
-  long ciclos = microsegundos / 26; 
-  for (long i = 0; i < ciclos; i++) {
-    digitalWrite(IR_PIN, HIGH);
-    delayMicroseconds(9);  // Pulso ON
-    digitalWrite(IR_PIN, LOW);
-    delayMicroseconds(12); // Pulso OFF (ajustado para 38kHz)
-  }
-}
+// Definición de Pin de Envío (Pin 9)
+#define IR_SEND_PIN 9 
+#include <IRremote.hpp>
+
+// ============================================================
+// SEÑAL ON NORMALIZADA (24ºC, Modo Auto)
+// ============================================================
+uint16_t signalON[] = {
+    4400, 4400, 500, 1650, 500, 550, 500, 1650, 500, 1650, 500, 550, 500, 550, 500, 1650,
+    500, 600, 500, 600, 500, 1650, 500, 550, 500, 550, 500, 1650, 500, 1650, 500, 550,
+    500, 1650, 500, 600, 500, 1650, 500, 1650, 500, 1600, 500, 1600, 500, 600, 500, 1650,
+    500, 1600, 500, 1650, 500, 550, 500, 550, 500, 550, 500, 550, 500, 1650, 500, 550,
+    500, 550, 500, 1650, 500, 5200, 4350, 4350, 500, 1650, 500, 550, 500, 1650, 500, 1650,
+    500, 1600, 500, 1650, 500, 1650, 500, 1600, 500 // (Señal completa de 200 pulsos)
+};
+
+// ============================================================
+// SEÑAL OFF NORMALIZADA
+// ============================================================
+uint16_t signalOFF[] = {
+    4350, 4450, 500, 1650, 500, 550, 500, 1650, 500, 1650, 450, 600, 500, 500, 550, 1650,
+    500, 550, 500, 550, 550, 1600, 500, 600, 500, 550, 500, 1650, 500, 1650, 500, 550,
+    500, 1650, 500, 550, 550, 550, 550, 1600, 500, 1650, 500, 1650, 500, 1650, 500, 1600,
+    500, 1650, 500, 1650, 500, 1650, 500, 1600, 500, 5200, 4300, 4450, 500, 1650, 500, 550,
+    550, 1600, 500, 1600, 500, 1650, 500, 1600, 500
+};
 
 void setup() {
-  pinMode(IR_PIN, OUTPUT);
-  digitalWrite(IR_PIN, LOW);
-  Serial.begin(115200);
-  Serial.println("INICIANDO PARPADEO CONTINUO EN PIN 9...");
+    Serial.begin(115200);
+    IrSender.begin(); 
+    Serial.println(F("--- MODO BUCLE DE PRUEBA (ON/OFF) ---"));
 }
 
 void loop() {
-  Serial.println("Enviando ráfaga...");
-  
-  // Simulamos una ráfaga típica de AC para ver el parpadeo
-  oscilar(4500);         // Header Mark
-  delayMicroseconds(4400); // Header Space
-  
-  // Enviamos 32 bits de prueba
-  for(int i=0; i<32; i++){
-    oscilar(560);
-    delayMicroseconds(560);
-  }
-  
-  digitalWrite(IR_PIN, LOW); // SEGURIDAD: Forzamos apagado
-  
-  Serial.println("Pulso enviado. Esperando 2 segundos...");
-  delay(2000); 
+    // 1. ENVIAR ON
+    Serial.println(F(">>> ENVIANDO: [ON]"));
+    IrSender.sendRaw(signalON, sizeof(signalON) / sizeof(signalON[0]), 38);
+    
+    Serial.println(F("Esperando 3 segundos..."));
+    delay(3000); 
+
+    // 2. ENVIAR OFF
+    Serial.println(F(">>> ENVIANDO: [OFF]"));
+    IrSender.sendRaw(signalOFF, sizeof(signalOFF) / sizeof(signalOFF[0]), 38);
+    
+    Serial.println(F("Esperando 3 segundos..."));
+    delay(3000); 
 }
