@@ -37,5 +37,7 @@ void setup() {
 void loop() {
     Serial.println(F("Sending AC ON..."));
     sendMideaPacket(codeON);
+    delay(9);
+    sendMideaPacket(codeON);
     delay(5000);
 }
